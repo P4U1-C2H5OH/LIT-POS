@@ -1,0 +1,13 @@
+sequenceDiagram
+    actor User
+    participant Frontend as React App
+    participant API as Django API
+    participant DB as Database
+
+    User->>Frontend: Enters Username/Password
+    Frontend->>API: POST /api/login/ {username, password}
+    API->>DB: Validate Credentials
+    DB-->>API: User Valid
+    API-->>Frontend: Returns JWT Token & User Profile
+    Frontend->>Frontend: Store Token in LocalStorage
+    Frontend-->>User: Redirect to Dashboard/Checkout

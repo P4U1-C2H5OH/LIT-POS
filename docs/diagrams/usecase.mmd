@@ -1,0 +1,27 @@
+usecaseDiagram
+    actor Admin
+    actor Cashier
+    actor Manager
+
+    package "POS System" {
+        usecase "Manage Inventory" as UI1
+        usecase "Manage Accounts" as UI2
+        usecase "View Analytics" as UI3
+        usecase "Process Sale" as UI4
+        usecase "View Transactions" as UI5
+        usecase "Manage Customers" as UI6
+    }
+
+    Admin --> UI2
+    Admin --> UI1
+    Admin --> UI3
+    Admin --> UI6
+
+    Manager --> UI1
+    Manager --> UI3
+    Manager --> UI6
+    Manager --> UI5
+
+    Cashier --> UI4
+    Cashier --> UI5
+    Cashier --> UI6

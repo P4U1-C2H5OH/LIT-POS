@@ -1,0 +1,53 @@
+classDiagram
+    direction BT
+    class Account {
+        +String username
+        +String password
+        +String role
+        +String name
+        +String profile_picture
+    }
+    class Customer {
+        +String name
+        +String email
+        +String phone
+        +Decimal total_spent
+    }
+    class InventoryItem {
+        +String sku
+        +String name
+        +Decimal selling_price
+        +Integer quantity
+        +String barcode
+    }
+    class Category {
+        +String name
+    }
+    class Tax {
+        +String name
+        +Decimal rate
+    }
+    class Transaction {
+        +String transaction_number
+        +Decimal total
+        +String payment_method
+        +DateTime date
+        +String status
+    }
+    class TransactionItem {
+        +Integer quantity
+        +Decimal price_at_sale
+    }
+    class SavedCart {
+        +String cart_number
+        +DateTime saved_date
+    }
+    
+    InventoryItem --> Category : belongs to
+    InventoryItem --> Tax : applies
+    Transaction --> Customer : linked to
+    Transaction --> Account : processed by
+    TransactionItem --> Transaction : part of
+    TransactionItem --> InventoryItem : references
+    SavedCart --> Customer : linked to
+    SavedCart --> Account : created by

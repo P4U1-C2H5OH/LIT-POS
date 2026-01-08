@@ -1,0 +1,20 @@
+sequenceDiagram
+    actor Cashier
+    participant UI as Checkout UI
+    participant Handler as Transaction Handler
+    participant API as POS API
+    participant DB as Database
+
+    Cashier->>UI: Scans Item / Adds to Cart
+    UI->>Handler: Add Item (Calculate Tax/Total)
+    Cashier->>UI: Selects Customer (Optional)
+    Cashier->>UI: Clicks "Process Payment"
+    UI->>Cashier: Shows Payment Modal
+    Cashier->>UI: Selects Method & Confirms
+    UI->>API: POST /api/transactions/
+    API->>DB: Create Transaction Record
+    API->>DB: Create Transaction Items
+    API->>DB: Update Inventory Quantity
+    DB-->>API: Success
+    API-->>UI: Return Transaction Details
+    UI->>Cashier: Show Success & Print Receipt

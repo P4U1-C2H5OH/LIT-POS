@@ -1,0 +1,19 @@
+stateDiagram-v2
+    [*] --> StartCheckout
+    StartCheckout --> AddItems: Scan/Search Product
+    AddItems --> AddItems: Add more items
+    AddItems --> SelectCustomer: (Optional)
+    SelectCustomer --> ReviewCart
+    AddItems --> ReviewCart
+    ReviewCart --> Payment: Proceed to Pay
+    Payment --> Choice: Select Method
+    Choice --> Cash
+    Choice --> Card
+    Choice --> MobileMoney
+    Cash --> ValidatePayment
+    Card --> ValidatePayment
+    MobileMoney --> ValidatePayment
+    ValidatePayment --> CompleteTransaction: Success
+    ValidatePayment --> Payment: Failed (Retry)
+    CompleteTransaction --> PrintReceipt
+    PrintReceipt --> [*]
