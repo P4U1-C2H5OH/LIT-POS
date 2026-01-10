@@ -53,13 +53,14 @@ class InventoryItemSerializer(serializers.ModelSerializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     customerSince = serializers.DateField(source='customer_since', read_only=True)
+    lastVisit = serializers.DateTimeField(source='last_visit', read_only=True)
     avgSpend = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
         fields = [
             'id', 'name', 'email', 'phone', 'group', 'notes', 'avatar', 
-            'customerSince', 'avgSpend', 'total_spent', 'purchase_count'
+            'customerSince', 'lastVisit', 'avgSpend', 'total_spent', 'purchase_count'
         ]
 
     def get_avgSpend(self, obj):

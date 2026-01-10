@@ -56,6 +56,7 @@ export interface Customer {
     notes?: string;
     avatar?: string;
     customerSince?: string;
+    lastVisit?: string;
     avgSpend?: number;
     total_spent?: string;
     purchase_count?: number;

@@ -91,8 +91,10 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
         # Update customer stats if customer is linked
         if txn.customer:
+            from django.utils import timezone
             txn.customer.total_spent += txn.total
             txn.customer.purchase_count += 1
+            txn.customer.last_visit = timezone.now()  # Update last visit timestamp
             txn.customer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)

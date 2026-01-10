@@ -59,6 +59,7 @@ class Customer(models.Model):
     notes = models.TextField(null=True, blank=True)
     avatar = models.URLField(max_length=500, null=True, blank=True)
     customer_since = models.DateField(auto_now_add=True)
+    last_visit = models.DateTimeField(null=True, blank=True)  # Last transaction date
     total_spent = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     purchase_count = models.IntegerField(default=0)
 

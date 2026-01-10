@@ -197,32 +197,28 @@ export function Checkout({
     }
   };
 
+  const roundMoney = (value) =>
+    Number((Math.round(value * 100) / 100).toFixed(2));
+
+
   const completeTransaction = async () => {
     try {
-      // Ensure all decimal values are properly rounded to 2 decimal places
-      const roundedSubtotal = Math.round(subtotal * 100) / 100;
-      const roundedTax = Math.round(tax * 100) / 100;
-      const roundedDiscount = Math.round(discountAmount * 100) / 100;
-      const roundedTotal = Math.round(total * 100) / 100;
-
       const payload = {
         customer: selectedCustomer?.id || null,
         paymentMethod: selectedPaymentMethod.toUpperCase(),
-        subtotal: roundedSubtotal.toFixed(2),
-        tax: roundedTax.toFixed(2),
-        discount: roundedDiscount.toFixed(2),
-        total: roundedTotal.toFixed(2),
+        subtotal: roundMoney(subtotal),
+        tax: roundMoney(tax),
+        discount: roundMoney(discountAmount),
+        total: roundMoney(total),
         status: "COMPLETED",
         items: cart.map((item: CartItem) => ({
           item: item.id,
           quantity: item.quantity,
-          price_at_sale: Number(item.price).toFixed(2)
+          price_at_sale: roundMoney(item.price)
         }))
       };
 
-      console.log('Transaction payload:', payload);
-      const result = await api.createTransaction(payload);
-      console.log('Transaction result:', result);
+      await api.createTransaction(payload);
 
       // Reset cart and state
       setCart([]);
@@ -235,7 +231,6 @@ export function Checkout({
       const freshInventory = await api.getInventory();
       setItems(freshInventory);
     } catch (error: any) {
-      console.error('Transaction error:', error);
       alert("Failed to complete transaction: " + error.message);
     }
   };
@@ -249,12 +244,9 @@ export function Checkout({
           quantity: item.quantity
         }))
       };
-      console.log('Save cart payload:', payload);
-      const result = await api.saveCart(payload);
-      console.log('Save cart result:', result);
+      await api.saveCart(payload);
       alert("Cart saved successfully!");
     } catch (error: any) {
-      console.error('Save cart error:', error);
       alert("Failed to save cart: " + error.message);
     }
   };
@@ -913,7 +905,7 @@ export function Checkout({
                   Avg Spend
                 </p>
                 <p className="text-slate-900">
-                  M{selectedCustomer.avgSpend}
+                  M{(Number(selectedCustomer.avgSpend) || 0).toFixed(2)}
                 </p>
               </div>
               <div className="bg-white/50 rounded-xl p-4 border border-white/50">
@@ -921,7 +913,7 @@ export function Checkout({
                   Last Visit
                 </p>
                 <p className="text-slate-900">
-                  {selectedCustomer.lastVisit}
+                  {selectedCustomer.lastVisit ? new Date(selectedCustomer.lastVisit).toLocaleDateString() : 'New'}
                 </p>
               </div>
             </div>
@@ -980,7 +972,7 @@ export function Checkout({
                   Total Amount
                 </p>
                 <p className="text-3xl text-[#D78B30]">
-                  ${total.toFixed(2)}
+                  M{total.toFixed(2)}
                 </p>
               </div>
 
