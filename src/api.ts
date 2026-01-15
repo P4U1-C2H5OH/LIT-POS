@@ -68,6 +68,7 @@ export interface Transaction {
     date: string;
     customer: number | null;
     customerName: string;
+    customerAvatar: string;
     account: number;
     accountName: string;
     paymentMethod: string;
@@ -82,6 +83,28 @@ export interface Transaction {
         itemName: string;
         quantity: number;
         price_at_sale: string;
+    }>;
+}
+
+export interface SavedCart {
+    id: string | number;
+    cartNumber: string;
+    savedDate: string;
+    customer: number | null;
+    customerName: string;
+    customerAvatar: string;
+    account: number;
+    accountName: string;
+    subtotal: string;
+    tax: string;
+    discount: string;
+    total: string;
+    notes?: string;
+    items: Array<{
+        id: number;
+        item: number;
+        itemName: string;
+        quantity: number;
     }>;
 }
 
@@ -230,6 +253,13 @@ class ApiService {
         return this.request('/customers/');
     }
 
+    async createCustomer(data: Partial<Customer>): Promise<Customer> {
+        return this.request('/customers/', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
     async getTransactions(): Promise<Transaction[]> {
         return this.request('/transactions/');
     }
@@ -250,6 +280,12 @@ class ApiService {
             method: 'POST',
             body: JSON.stringify(data)
         })
+    }
+
+    async deleteSavedCart(id: string | number) {
+        return this.request(`/saved-carts/${id}/`, {
+            method: 'DELETE',
+        });
     }
 
     async getSavedCarts() {

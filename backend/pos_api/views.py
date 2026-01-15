@@ -45,9 +45,11 @@ class CustomerViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
 class TransactionViewSet(viewsets.ModelViewSet):
-    queryset = Transaction.objects.all().order_by('-date')
     serializer_class = TransactionSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Transaction.objects.filter(account=self.request.user).order_by('-date')
 
     @db_transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -100,9 +102,11 @@ class TransactionViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class SavedCartViewSet(viewsets.ModelViewSet):
-    queryset = SavedCart.objects.all().order_by('-saved_date')
     serializer_class = SavedCartSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return SavedCart.objects.filter(account=self.request.user).order_by('-saved_date')
 
     @db_transaction.atomic
     def create(self, request, *args, **kwargs):

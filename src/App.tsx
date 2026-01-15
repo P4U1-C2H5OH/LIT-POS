@@ -9,7 +9,7 @@ import { Inventory } from "./components/Inventory";
 import { Sidebar } from "./components/Sidebar";
 import { Trash2 } from "lucide-react";
 import logo from "figma:asset/9a588303adbb1fdb50d30917cd5d81adce6d930a.png";
-import { api, Account } from "./api";
+import { api, Account, SavedCart } from "./api";
 import { useEffect } from "react";
 
 export default function App() {
@@ -22,6 +22,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<Account | null>(null);
   const [currentPage, setCurrentPage] = useState("Dashboard");
+  const [pendingCart, setPendingCart] = useState<SavedCart | null>(null);
 
   useEffect(() => {
     // We don't fetch all accounts from API for the selection screen anymore
@@ -134,12 +135,18 @@ export default function App() {
           <Checkout
             userName={currentUser.name}
             userProfilePicture={currentUser.profilePicture}
+            pendingCart={pendingCart}
+            onClearPendingCart={() => setPendingCart(null)}
           />
         )}
         {effectivePage === "Transactions" && (
           <Transactions
             userName={currentUser.name}
             userProfilePicture={currentUser.profilePicture}
+            onResumeCart={(cart: SavedCart) => {
+              setPendingCart(cart);
+              setCurrentPage('Checkout');
+            }}
           />
         )}
         {effectivePage === "Inventory" && (

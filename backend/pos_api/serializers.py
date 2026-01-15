@@ -78,6 +78,7 @@ class TransactionItemSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     items = TransactionItemSerializer(many=True, read_only=True)
     customerName = serializers.ReadOnlyField(source='customer.name')
+    customerAvatar = serializers.ReadOnlyField(source='customer.avatar')
     accountName = serializers.ReadOnlyField(source='account.name')
     transactionNumber = serializers.CharField(source='transaction_number', required=False)
     paymentMethod = serializers.CharField(source='payment_method')
@@ -85,7 +86,7 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = [
-            'id', 'transactionNumber', 'date', 'customer', 'customerName', 
+            'id', 'transactionNumber', 'date', 'customer', 'customerName', 'customerAvatar', 
             'account', 'accountName', 'paymentMethod', 'subtotal', 'tax', 
             'discount', 'total', 'status', 'items'
         ]
@@ -104,6 +105,7 @@ class SavedCartItemSerializer(serializers.ModelSerializer):
 class SavedCartSerializer(serializers.ModelSerializer):
     items = SavedCartItemSerializer(many=True, read_only=True)
     customerName = serializers.ReadOnlyField(source='customer.name')
+    customerAvatar = serializers.ReadOnlyField(source='customer.avatar')
     accountName = serializers.ReadOnlyField(source='account.name')
     cartNumber = serializers.CharField(source='cart_number', required=False)
     savedDate = serializers.DateTimeField(source='saved_date', read_only=True)
@@ -111,8 +113,9 @@ class SavedCartSerializer(serializers.ModelSerializer):
     class Meta:
         model = SavedCart
         fields = [
-            'id', 'cartNumber', 'savedDate', 'customer', 'customerName', 
-            'account', 'accountName', 'total', 'notes', 'items'
+            'id', 'cartNumber', 'savedDate', 'customer', 'customerName', 'customerAvatar', 
+            'account', 'accountName', 'subtotal', 'tax', 'discount', 'total', 
+            'notes', 'items'
         ]
         extra_kwargs = {
             'account': {'required': False},  # Set by view from request.user

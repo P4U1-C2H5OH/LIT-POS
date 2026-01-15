@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Search,
   X,
@@ -15,11 +15,11 @@ import {
   Pin,
   GripVertical,
   Trash2,
-  Edit,
+  Camera,
+  Upload,
 } from "lucide-react";
 // Logo import removed - using text-based branding instead
-import { api, Item, Customer, Category, Tax } from "../api";
-import { useEffect } from "react";
+import { api, Item, Customer, Category, Tax, SavedCart } from "../api";
 
 interface CartItem extends Item {
   quantity: number;
@@ -28,11 +28,15 @@ interface CartItem extends Item {
 interface CheckoutProps {
   userName: string;
   userProfilePicture: string;
+  pendingCart: SavedCart | null;
+  onClearPendingCart: () => void;
 }
 
 export function Checkout({
   userName,
   userProfilePicture,
+  pendingCart,
+  onClearPendingCart,
 }: CheckoutProps) {
   const [selectedCategory, setSelectedCategory] =
     useState("All Items");
@@ -52,14 +56,91 @@ export function Checkout({
     useState<Customer | null>(null);
   const [showCustomerInfo, setShowCustomerInfo] =
     useState(false);
-  const [discount, setDiscount] = useState(0);
+  const [discountValue, setDiscountValue] = useState(0);
+  const [discountType, setDiscountType] = useState<"percentage" | "fixed">("percentage");
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState("");
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<string[]>(["All Items", "Favorites"]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+
+  // Handle pending cart resumption
+  useEffect(() => {
+    if (pendingCart && items.length > 0) {
+      console.log("Resuming cart:", pendingCart);
+
+      // 1. Restore Cart Items
+      const restoredCart: CartItem[] = pendingCart.items.map(cartItem => {
+        const fullItem = items.find(i => i.id === cartItem.item);
+        if (fullItem) {
+          return { ...fullItem, quantity: cartItem.quantity };
+        }
+        // Fallback if item not found (shouldn't happen with live data)
+        return {
+          id: cartItem.item,
+          name: cartItem.itemName,
+          sku: "",
+          price: 0,
+          stock: 0,
+          category: 0,
+          categoryName: "",
+          tax: 0,
+          taxRate: 0,
+          unit: "",
+          image: "",
+          quantity: cartItem.quantity
+        };
+      }).filter(item => item.price > 0 || item.id);
+
+      setCart(restoredCart);
+
+      // 2. Restore Customer
+      if (pendingCart.customer) {
+        const customer = customers.find(c => c.id === pendingCart.customer);
+        if (customer) {
+          setSelectedCustomer(customer);
+        } else {
+          // If customer not in list, we might need to fetch or just set minimal info
+          setSelectedCustomer({
+            id: pendingCart.customer,
+            name: pendingCart.customerName,
+            email: "",
+            phone: "",
+            avatar: ""
+          });
+        }
+      }
+
+      // 3. Restore Discount
+      // Since SavedCart stores discount as a string (Decimal), we parse it.
+      // But we need to know if it was fixed or percentage.
+      // For now, if subtotal > 0, we can infer percentage or just treat it as fixed if we don't store type.
+      // Actually, we added discountType to state but not to the model yet.
+      // I'll assume it's fixed if resume is from SavedCart for now, or calculate %.
+      const discVal = parseFloat(pendingCart.discount);
+      if (discVal > 0) {
+        setDiscountValue(discVal);
+        setDiscountType("fixed"); // Default to fixed on resume for accuracy
+      }
+
+      // 4. Clear the pending state in App
+      onClearPendingCart();
+    }
+  }, [pendingCart, items, customers, onClearPendingCart]);
   const [taxes, setTaxes] = useState<Tax[]>([]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [newCustomer, setNewCustomer] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    group: "regular",
+    notes: "",
+    avatar: "",
+  });
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -128,6 +209,81 @@ export function Checkout({
     return matchesCategory && matchesSearch;
   });
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewCustomer({ ...newCustomer, avatar: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (error) {
+      console.error("Camera access denied:", error);
+      alert("Could not access camera. Please check permissions.");
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const streams = (videoRef.current.srcObject as MediaStream).getTracks();
+      streams.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement("canvas");
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg");
+        setNewCustomer({ ...newCustomer, avatar: dataUrl });
+        stopCamera();
+      }
+    }
+  };
+
+  const handleCreateCustomer = async () => {
+    try {
+      if (!newCustomer.name || !newCustomer.phone) {
+        alert("Please fill in Name and Phone number");
+        return;
+      }
+      const created = await api.createCustomer(newCustomer);
+      setCustomers([...customers, created]);
+      setSelectedCustomer(created);
+      setShowNewCustomerModal(false);
+      setShowCustomerModal(false);
+      setNewCustomer({
+        name: "",
+        email: "",
+        phone: "",
+        group: "regular",
+        notes: "",
+        avatar: "",
+      });
+      alert("Customer created successfully!");
+    } catch (error: any) {
+      console.error("Failed to create customer:", error);
+      alert("Failed to create customer: " + error.message);
+    }
+  };
+
   const addToCart = (item: Item, quantity: number) => {
     const existingItem = cart.find(
       (cartItem) => cartItem.id === item.id,
@@ -150,12 +306,12 @@ export function Checkout({
     setItemQuantity(1);
   };
 
-  const removeFromCart = (itemId: string) => {
+  const removeFromCart = (itemId: string | number) => {
     setCart(cart.filter((item) => item.id !== itemId));
   };
 
   const updateCartQuantity = (
-    itemId: string,
+    itemId: string | number,
     newQuantity: number,
   ) => {
     if (newQuantity === 0) {
@@ -172,17 +328,26 @@ export function Checkout({
   };
 
   const subtotal = cart.reduce(
-    (sum, item: CartItem) => sum + item.price * item.quantity,
+    (sum: number, item: CartItem) => sum + item.price * item.quantity,
     0,
   );
 
-  // Dynamic tax calculation based on item's tax rate
+  const discountAmount = discountType === "percentage"
+    ? subtotal * (discountValue / 100)
+    : discountValue;
+
+  const taxableAmount = Math.max(0, subtotal - discountAmount);
+
+  // Apply tax to the discounted amount proportionally
+  // If subtotal is 0, tax is 0.
+  const taxScale = subtotal > 0 ? taxableAmount / subtotal : 0;
+
   const tax = cart.reduce(
-    (sum, item: CartItem) => sum + (item.price * item.quantity * (item.taxRate || 0)),
+    (sum: number, item: CartItem) => sum + (item.price * item.quantity * (item.taxRate || 0)),
     0
-  );
-  const discountAmount = subtotal * (discount / 100);
-  const total = subtotal + tax - discountAmount;
+  ) * taxScale;
+
+  const total = taxableAmount + tax;
 
   const handleItemClick = (item: Item) => {
     setSelectedItem(item);
@@ -223,7 +388,8 @@ export function Checkout({
       // Reset cart and state
       setCart([]);
       setSelectedCustomer(null);
-      setDiscount(0);
+      setDiscountValue(0);
+      setDiscountType("percentage");
       setShowPaymentModal(false);
       alert("Transaction completed successfully!");
 
@@ -242,7 +408,11 @@ export function Checkout({
         items: cart.map((item: CartItem) => ({
           item: item.id,
           quantity: item.quantity
-        }))
+        })),
+        subtotal: roundMoney(subtotal),
+        tax: roundMoney(tax),
+        discount: roundMoney(discountAmount),
+        total: roundMoney(total)
       };
       await api.saveCart(payload);
       alert("Cart saved successfully!");
@@ -486,26 +656,20 @@ export function Checkout({
             <div className="space-y-4">
               {/* Discount */}
               <button
-                onClick={() => {
-                  const discountValue = prompt(
-                    "Enter discount percentage:",
-                  );
-                  if (discountValue) {
-                    setDiscount(
-                      Math.min(
-                        100,
-                        Math.max(0, parseFloat(discountValue)),
-                      ),
-                    );
-                  }
-                }}
+                onClick={() => setShowDiscountModal(true)}
                 className="flex items-center justify-between w-full text-sm text-[#D78B30] hover:bg-white/50 p-2 rounded-lg transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <Percent className="w-4 h-4" />
                   <span>Add Discount</span>
                 </div>
-                {discount > 0 && <span>{discount}% off</span>}
+                {discountValue > 0 && (
+                  <span className="font-medium">
+                    {discountType === "percentage"
+                      ? `${discountValue}% off`
+                      : `M${discountValue} off`}
+                  </span>
+                )}
               </button>
 
               {/* Totals */}
@@ -518,9 +682,11 @@ export function Checkout({
                   <span>Tax (15%)</span>
                   <span>M{tax.toFixed(2)}</span>
                 </div>
-                {discount > 0 && (
+                {discountValue > 0 && (
                   <div className="flex justify-between text-green-600">
-                    <span>Discount ({discount}%)</span>
+                    <span>
+                      Discount {discountType === "percentage" ? `(${discountValue}%)` : ""}
+                    </span>
                     <span>-M{discountAmount.toFixed(2)}</span>
                   </div>
                 )}
@@ -766,11 +932,82 @@ export function Checkout({
                 New Customer
               </h3>
               <button
-                onClick={() => setShowNewCustomerModal(false)}
+                onClick={() => {
+                  if (isCameraActive) stopCamera();
+                  setShowNewCustomerModal(false);
+                }}
                 className="p-2 hover:bg-white/50 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-slate-600" />
               </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative w-32 h-32 rounded-full overflow-hidden bg-slate-100 border-2 border-slate-200">
+                  {isCameraActive ? (
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      className="w-18 h-18 object-cover"
+                    />
+                  ) : newCustomer.avatar ? (
+                    <img
+                      src={newCustomer.avatar}
+                      alt="Avatar Preview"
+                      className="w-16 h-16 object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="w-16 h-16 text-slate-400" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {!isCameraActive ? (
+                    <>
+                      <button
+                        onClick={startCamera}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm transition-colors"
+                      >
+                        <Camera className="w-4 h-4" />
+                        Take Photo
+                      </button>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm transition-colors"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={capturePhoto}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#D78B30] text-white rounded-xl text-sm transition-colors"
+                      >
+                        Capture
+                      </button>
+                      <button
+                        onClick={stopCamera}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-500 text-white rounded-xl text-sm transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4 mb-6">
@@ -782,6 +1019,10 @@ export function Checkout({
                   type="text"
                   className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                   placeholder="Enter customer name"
+                  value={newCustomer.name}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, name: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -792,6 +1033,10 @@ export function Checkout({
                   type="email"
                   className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                   placeholder="customer@email.com"
+                  value={newCustomer.email}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, email: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -802,13 +1047,23 @@ export function Checkout({
                   type="tel"
                   className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                   placeholder="(555) 555-5555"
+                  value={newCustomer.phone}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, phone: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <label className="text-sm text-slate-600 mb-2 block">
                   Customer Group
                 </label>
-                <select className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors">
+                <select
+                  className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
+                  value={newCustomer.group}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, group: e.target.value })
+                  }
+                >
                   <option value="">Select group</option>
                   <option value="regular">Regular</option>
                   <option value="premium">Premium</option>
@@ -823,6 +1078,10 @@ export function Checkout({
                   rows={3}
                   className="w-full bg-white border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#D78B30] transition-colors resize-none"
                   placeholder="Add any relevant notes..."
+                  value={newCustomer.notes}
+                  onChange={(e) =>
+                    setNewCustomer({ ...newCustomer, notes: e.target.value })
+                  }
                 ></textarea>
               </div>
             </div>
@@ -835,11 +1094,7 @@ export function Checkout({
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // In real app, this would create the customer
-                  setShowNewCustomerModal(false);
-                  alert("Customer created successfully!");
-                }}
+                onClick={handleCreateCustomer}
                 className="flex-1 bg-[#D78B30] hover:bg-[#C4661F] text-white py-3 rounded-xl transition-colors"
               >
                 Create Customer
@@ -1023,6 +1278,84 @@ export function Checkout({
               >
                 Complete Payment
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Discount Modal */}
+      {showDiscountModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white/90 backdrop-blur-md rounded-2xl w-full max-w-md shadow-2xl border border-white/50 p-6">
+            <div className="flex justify-between items-start mb-6">
+              <h3 className="text-slate-900 text-xl">
+                Add Discount
+              </h3>
+              <button
+                onClick={() => setShowDiscountModal(false)}
+                className="p-2 hover:bg-white/50 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-600" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDiscountType("percentage")}
+                  className={`flex-1 py-3 rounded-xl border-2 transition-all ${discountType === "percentage"
+                    ? "border-[#D78B30] bg-[#D78B30]/10 text-[#D78B30]"
+                    : "border-slate-100 hover:border-slate-200 text-slate-500"
+                    }`}
+                >
+                  Percentage (%)
+                </button>
+                <button
+                  onClick={() => setDiscountType("fixed")}
+                  className={`flex-1 py-3 rounded-xl border-2 transition-all ${discountType === "fixed"
+                    ? "border-[#D78B30] bg-[#D78B30]/10 text-[#D78B30]"
+                    : "border-slate-100 hover:border-slate-200 text-slate-500"
+                    }`}
+                >
+                  Fixed (M)
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Discount Value
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#D78B30]/20 focus:border-[#D78B30] transition-all"
+                    placeholder={`Enter ${discountType === "percentage" ? "percentage" : "amount"}`}
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">
+                    {discountType === "percentage" ? "%" : "M"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setDiscountValue(0);
+                    setShowDiscountModal(false);
+                  }}
+                  className="flex-1 bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 py-3 rounded-xl transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setShowDiscountModal(false)}
+                  className="flex-1 bg-[#D78B30] hover:bg-[#C4661F] text-white py-3 rounded-xl transition-colors"
+                >
+                  Apply
+                </button>
+              </div>
             </div>
           </div>
         </div>

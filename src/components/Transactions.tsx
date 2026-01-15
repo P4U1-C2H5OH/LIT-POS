@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Filter,
@@ -16,61 +16,17 @@ import {
   Clock,
   Trash2,
   PlayCircle,
+  User,
 } from "lucide-react";
-import logo from "figma:asset/9a588303adbb1fdb50d30917cd5d81adce6d930a.png";
+import { api, Transaction, SavedCart } from "../api";
 
 interface TransactionsProps {
   userName: string;
   userProfilePicture: string;
+  onResumeCart: (cart: SavedCart) => void;
 }
 
-interface Transaction {
-  id: string;
-  transactionNumber: string;
-  date: Date;
-  customer: {
-    name: string;
-    avatar: string;
-  };
-  items: {
-    name: string;
-    quantity: number;
-    price: number;
-  }[];
-  paymentMethod:
-  | "M-Pesa"
-  | "EcoCash"
-  | "Cash"
-  | "Credit"
-  | "EFT";
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  status: "Completed" | "Refunded" | "Pending";
-}
 
-interface SavedCart {
-  id: string;
-  cartNumber: string;
-  savedDate: Date;
-  customer: {
-    name: string;
-    avatar: string;
-    phone: string;
-  };
-  items: {
-    name: string;
-    sku: string;
-    quantity: number;
-    price: number;
-  }[];
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  notes?: string;
-}
 
 type TimePeriod = "Today" | "Week" | "Month" | "All Time";
 type ViewMode = "Transactions" | "Saved Carts";
@@ -78,6 +34,7 @@ type ViewMode = "Transactions" | "Saved Carts";
 export function Transactions({
   userName,
   userProfilePicture,
+  onResumeCart,
 }: TransactionsProps) {
   const [selectedPeriod, setSelectedPeriod] =
     useState<TimePeriod>("Today");
@@ -94,6 +51,41 @@ export function Transactions({
   const [selectedCalendarDay, setSelectedCalendarDay] =
     useState<Date | null>(null);
 
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [savedCarts, setSavedCarts] = useState<SavedCart[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [txs, carts] = await Promise.all([
+        api.getTransactions(),
+        api.getSavedCarts(),
+      ]);
+      setTransactions(txs);
+      setSavedCarts(carts);
+    } catch (error) {
+      console.error("Failed to fetch transactions/carts:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleDeleteCart = async (id: string | number) => {
+    if (confirm("Are you sure you want to delete this saved cart?")) {
+      try {
+        await api.deleteSavedCart(id);
+        fetchData(); // Refresh
+      } catch (error: any) {
+        alert("Failed to delete cart: " + error.message);
+      }
+    }
+  };
+
   const paymentMethods = [
     "All",
     "M-Pesa",
@@ -103,384 +95,8 @@ export function Transactions({
     "EFT",
   ];
 
-  // Mock saved carts data
-  const savedCarts: SavedCart[] = [
-    {
-      id: "cart-1",
-      cartNumber: "CART-2025-001",
-      savedDate: new Date(2025, 0, 3, 10, 30),
-      customer: {
-        name: "Sam Edwards",
-        avatar:
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-        phone: "(415) 555-0132",
-      },
-      items: [
-        {
-          name: "Paracetamol 500mg",
-          sku: "MED-001",
-          quantity: 3,
-          price: 5.99,
-        },
-        {
-          name: "Vitamin C Tablets",
-          sku: "SUP-012",
-          quantity: 2,
-          price: 12.5,
-        },
-        {
-          name: "Hand Sanitizer 500ml",
-          sku: "HYG-008",
-          quantity: 1,
-          price: 8.99,
-        },
-      ],
-      subtotal: 51.96,
-      tax: 7.79,
-      discount: 0,
-      total: 59.75,
-      notes:
-        "Customer will return tomorrow to complete purchase",
-    },
-    {
-      id: "cart-2",
-      cartNumber: "CART-2025-002",
-      savedDate: new Date(2025, 0, 2, 16, 15),
-      customer: {
-        name: "Jessica Williams",
-        avatar:
-          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-        phone: "(415) 555-0198",
-      },
-      items: [
-        {
-          name: "Blood Pressure Monitor",
-          sku: "DEV-003",
-          quantity: 1,
-          price: 45.99,
-        },
-        {
-          name: "Thermometer Digital",
-          sku: "DEV-007",
-          quantity: 1,
-          price: 18.5,
-        },
-      ],
-      subtotal: 64.49,
-      tax: 9.67,
-      discount: 6.45,
-      total: 67.71,
-      notes: "Waiting for insurance approval",
-    },
-    {
-      id: "cart-3",
-      cartNumber: "CART-2025-003",
-      savedDate: new Date(2025, 0, 1, 14, 45),
-      customer: {
-        name: "Michael Chen",
-        avatar:
-          "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop",
-        phone: "(415) 555-0145",
-      },
-      items: [
-        {
-          name: "Multivitamin Tablets",
-          sku: "SUP-024",
-          quantity: 5,
-          price: 16.99,
-        },
-        {
-          name: "Ibuprofen 400mg",
-          sku: "MED-005",
-          quantity: 3,
-          price: 7.25,
-        },
-      ],
-      subtotal: 106.7,
-      tax: 16.01,
-      discount: 10.67,
-      total: 112.04,
-      notes: "Regular customer - monthly vitamin stock",
-    },
-    {
-      id: "cart-4",
-      cartNumber: "CART-2024-512",
-      savedDate: new Date(2024, 11, 30, 11, 20),
-      customer: {
-        name: "Anna Martinez",
-        avatar:
-          "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-        phone: "(415) 555-0167",
-      },
-      items: [
-        {
-          name: "Face Mask Box (50pcs)",
-          sku: "HYG-015",
-          quantity: 2,
-          price: 15.0,
-        },
-        {
-          name: "Surgical Gloves Box",
-          sku: "HYG-022",
-          quantity: 1,
-          price: 13.5,
-        },
-      ],
-      subtotal: 43.5,
-      tax: 6.53,
-      discount: 0,
-      total: 50.03,
-    },
-  ];
-
-  // Mock transaction data
-  const allTransactions: Transaction[] = [
-    // Today
-    {
-      id: "1",
-      transactionNumber: "TXN-2025-001",
-      date: new Date(2026, 0, 1, 14, 30),
-      customer: {
-        name: "Sam Edwards",
-        avatar:
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-      },
-      items: [
-        { name: "Paracetamol 500mg", quantity: 2, price: 5.99 },
-        { name: "Vitamin C Tablets", quantity: 1, price: 12.5 },
-      ],
-      paymentMethod: "M-Pesa",
-      subtotal: 24.48,
-      tax: 3.67,
-      discount: 0,
-      total: 28.15,
-      status: "Completed",
-    },
-    {
-      id: "2",
-      transactionNumber: "TXN-2025-002",
-      date: new Date(2026, 0, 1, 15, 45),
-      customer: {
-        name: "Jessica Williams",
-        avatar:
-          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop",
-      },
-      items: [
-        {
-          name: "Hand Sanitizer 500ml",
-          quantity: 3,
-          price: 8.99,
-        },
-        {
-          name: "Face Mask Box (50pcs)",
-          quantity: 2,
-          price: 15.0,
-        },
-      ],
-      paymentMethod: "Cash",
-      subtotal: 56.97,
-      tax: 8.55,
-      discount: 5.7,
-      total: 59.82,
-      status: "Completed",
-    },
-    {
-      id: "3",
-      transactionNumber: "TXN-2025-003",
-      date: new Date(2026, 0, 1, 11, 20),
-      customer: {
-        name: "Michael Chen",
-        avatar:
-          "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop",
-      },
-      items: [
-        {
-          name: "Blood Pressure Monitor",
-          quantity: 1,
-          price: 45.99,
-        },
-      ],
-      paymentMethod: "Credit",
-      subtotal: 45.99,
-      tax: 6.9,
-      discount: 0,
-      total: 52.89,
-      status: "Completed",
-    },
-    {
-      id: "4",
-      transactionNumber: "TXN-2025-004",
-      date: new Date(2026, 0, 1, 9, 15),
-      customer: {
-        name: "Anna Martinez",
-        avatar:
-          "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-      },
-      items: [
-        { name: "Ibuprofen 400mg", quantity: 2, price: 7.25 },
-        { name: "Cough Syrup", quantity: 1, price: 11.5 },
-        {
-          name: "Thermometer Digital",
-          quantity: 1,
-          price: 18.5,
-        },
-      ],
-      paymentMethod: "EcoCash",
-      subtotal: 44.5,
-      tax: 6.68,
-      discount: 0,
-      total: 51.18,
-      status: "Completed",
-    },
-    // Yesterday
-    {
-      id: "5",
-      transactionNumber: "TXN-2024-287",
-      date: new Date(2025, 11, 31, 16, 30),
-      customer: {
-        name: "David Lee",
-        avatar:
-          "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-      },
-      items: [
-        { name: "Bandages Pack", quantity: 2, price: 6.75 },
-        { name: "Antiseptic Cream", quantity: 1, price: 9.99 },
-      ],
-      paymentMethod: "Cash",
-      subtotal: 23.49,
-      tax: 3.52,
-      discount: 0,
-      total: 27.01,
-      status: "Completed",
-    },
-    {
-      id: "6",
-      transactionNumber: "TXN-2024-286",
-      date: new Date(2025, 11, 31, 14, 15),
-      customer: {
-        name: "Sarah Johnson",
-        avatar:
-          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop",
-      },
-      items: [
-        {
-          name: "Multivitamin Tablets",
-          quantity: 3,
-          price: 16.99,
-        },
-      ],
-      paymentMethod: "M-Pesa",
-      subtotal: 50.97,
-      tax: 7.65,
-      discount: 5.1,
-      total: 53.52,
-      status: "Completed",
-    },
-    // Last Week
-    {
-      id: "7",
-      transactionNumber: "TXN-2024-278",
-      date: new Date(2025, 11, 28, 10, 30),
-      customer: {
-        name: "Robert Wilson",
-        avatar:
-          "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop",
-      },
-      items: [
-        {
-          name: "Surgical Gloves Box",
-          quantity: 2,
-          price: 13.5,
-        },
-        {
-          name: "Hand Sanitizer 500ml",
-          quantity: 4,
-          price: 8.99,
-        },
-      ],
-      paymentMethod: "EFT",
-      subtotal: 62.96,
-      tax: 9.44,
-      discount: 0,
-      total: 72.4,
-      status: "Completed",
-    },
-    {
-      id: "8",
-      transactionNumber: "TXN-2024-265",
-      date: new Date(2025, 11, 25, 13, 45),
-      customer: {
-        name: "Emma Davis",
-        avatar:
-          "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop",
-      },
-      items: [
-        { name: "Paracetamol 500mg", quantity: 1, price: 5.99 },
-      ],
-      paymentMethod: "Cash",
-      subtotal: 5.99,
-      tax: 0.9,
-      discount: 0,
-      total: 6.89,
-      status: "Refunded",
-    },
-    // Last Month
-    {
-      id: "9",
-      transactionNumber: "TXN-2024-198",
-      date: new Date(2025, 11, 15, 11, 20),
-      customer: {
-        name: "James Anderson",
-        avatar:
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop",
-      },
-      items: [
-        {
-          name: "Blood Pressure Monitor",
-          quantity: 1,
-          price: 45.99,
-        },
-        {
-          name: "Thermometer Digital",
-          quantity: 1,
-          price: 18.5,
-        },
-      ],
-      paymentMethod: "Credit",
-      subtotal: 64.49,
-      tax: 9.67,
-      discount: 6.45,
-      total: 67.71,
-      status: "Completed",
-    },
-    {
-      id: "10",
-      transactionNumber: "TXN-2024-165",
-      date: new Date(2025, 11, 2, 15, 10),
-      customer: {
-        name: "Lisa Brown",
-        avatar:
-          "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=100&h=100&fit=crop",
-      },
-      items: [
-        { name: "Vitamin C Tablets", quantity: 2, price: 12.5 },
-        {
-          name: "Multivitamin Tablets",
-          quantity: 1,
-          price: 16.99,
-        },
-      ],
-      paymentMethod: "M-Pesa",
-      subtotal: 41.99,
-      tax: 6.3,
-      discount: 0,
-      total: 48.29,
-      status: "Completed",
-    },
-  ];
-
   // Filter transactions based on period and payment method
-  const getFilteredTransactions = () => {
+  const getFilteredTransactions = useCallback(() => {
     const now = new Date();
     const today = new Date(
       now.getFullYear(),
@@ -492,29 +108,27 @@ export function Transactions({
     const monthAgo = new Date(today);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    let filtered = allTransactions;
+    let filtered = transactions;
 
     // Filter by calendar day selection (only when "All Time" is selected)
     if (selectedPeriod === "All Time" && selectedCalendarDay) {
-      filtered = filtered.filter(
-        (t) =>
-          t.date.getFullYear() ===
-          selectedCalendarDay.getFullYear() &&
-          t.date.getMonth() ===
-          selectedCalendarDay.getMonth() &&
-          t.date.getDate() === selectedCalendarDay.getDate(),
-      );
+      filtered = filtered.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === selectedCalendarDay.getFullYear() &&
+          d.getMonth() === selectedCalendarDay.getMonth() &&
+          d.getDate() === selectedCalendarDay.getDate();
+      });
     } else {
       // Filter by time period
       switch (selectedPeriod) {
         case "Today":
-          filtered = filtered.filter((t) => t.date >= today);
+          filtered = filtered.filter((t) => new Date(t.date) >= today);
           break;
         case "Week":
-          filtered = filtered.filter((t) => t.date >= weekAgo);
+          filtered = filtered.filter((t) => new Date(t.date) >= weekAgo);
           break;
         case "Month":
-          filtered = filtered.filter((t) => t.date >= monthAgo);
+          filtered = filtered.filter((t) => new Date(t.date) >= monthAgo);
           break;
         case "All Time":
           // No filtering
@@ -536,28 +150,26 @@ export function Transactions({
           t.transactionNumber
             .toLowerCase()
             .includes(searchQuery.toLowerCase()) ||
-          t.customer.name
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase()),
+          (t.customerName && t.customerName.toLowerCase().includes(searchQuery.toLowerCase())),
       );
     }
 
     return filtered.sort(
-      (a, b) => b.date.getTime() - a.date.getTime(),
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
-  };
+  }, [transactions, selectedPeriod, selectedCalendarDay, selectedPaymentMethod, searchQuery]);
 
   const filteredTransactions = getFilteredTransactions();
 
   // Calculate statistics
-  const calculateStats = () => {
-    const transactions = getFilteredTransactions();
-    const totalSales = transactions.reduce(
-      (sum, t) => sum + t.total,
+  const calculateStats = useCallback(() => {
+    const txs = getFilteredTransactions();
+    const totalSales = txs.reduce(
+      (sum, t) => sum + parseFloat(t.total),
       0,
     );
-    const totalTransactions = transactions.length;
-    const totalItems = transactions.reduce(
+    const totalTransactions = txs.length;
+    const totalItems = txs.reduce(
       (sum, t) =>
         sum + t.items.reduce((s, i) => s + i.quantity, 0),
       0,
@@ -568,7 +180,7 @@ export function Transactions({
       transactions: totalTransactions,
       itemsSold: totalItems,
     };
-  };
+  }, [getFilteredTransactions]);
 
   const stats = calculateStats();
 
@@ -614,7 +226,7 @@ export function Transactions({
   };
 
   // Generate calendar view for the month
-  const generateCalendarDays = () => {
+  const generateCalendarDays = useCallback(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
@@ -632,14 +244,14 @@ export function Transactions({
     // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const dayTransactions = allTransactions.filter(
-        (t) =>
-          t.date.getFullYear() === year &&
-          t.date.getMonth() === month &&
-          t.date.getDate() === day,
-      );
+      const dayTransactions = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === year &&
+          d.getMonth() === month &&
+          d.getDate() === day;
+      });
       const dayTotal = dayTransactions.reduce(
-        (sum, t) => sum + t.total,
+        (sum, t) => sum + parseFloat(t.total),
         0,
       );
 
@@ -653,7 +265,7 @@ export function Transactions({
     }
 
     return days;
-  };
+  }, [currentMonth, transactions]);
 
   const calendarDays = generateCalendarDays();
 
@@ -691,6 +303,9 @@ export function Transactions({
       minute: "2-digit",
     });
   };
+
+  // Assuming 'logo' is imported or defined elsewhere
+  const logo = "/path/to/your/logo.png"; // Placeholder for logo path
 
   return (
     <div className="flex-1 bg-[#ffffff] p-8 relative overflow-y-auto h-screen">
@@ -970,34 +585,30 @@ export function Transactions({
                                         }
                                       </p>
                                       <p className="text-xs text-slate-500">
-                                        {formatDate(
-                                          transaction.date,
-                                        )}{" "}
+                                        {formatDate(new Date(transaction.date))}{" "}
                                         at{" "}
-                                        {formatTime(
-                                          transaction.date,
-                                        )}
+                                        {formatTime(new Date(transaction.date))}
                                       </p>
                                     </div>
                                   </td>
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
-                                      <img
-                                        src={
-                                          transaction.customer
-                                            .avatar
-                                        }
-                                        alt={
-                                          transaction.customer
-                                            .name
-                                        }
-                                        className="w-8 h-8 rounded-full object-cover"
-                                      />
+                                      {transaction.customerAvatar ? (
+                                        <img
+                                          src={transaction.customerAvatar}
+                                          alt={transaction.customerName}
+                                          className="w-8 h-8 rounded-full object-cover"
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop";
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                                          <User className="w-4 h-4 text-slate-400" />
+                                        </div>
+                                      )}
                                       <span className="text-sm text-slate-900">
-                                        {
-                                          transaction.customer
-                                            .name
-                                        }
+                                        {transaction.customerName || "Walk-in"}
                                       </span>
                                     </div>
                                   </td>
@@ -1016,9 +627,7 @@ export function Transactions({
                                   <td className="px-6 py-4">
                                     <span className="text-sm text-slate-900">
                                       M
-                                      {transaction.total.toFixed(
-                                        2,
-                                      )}
+                                      {parseFloat(transaction.total).toFixed(2)}
                                     </span>
                                   </td>
                                   <td className="px-6 py-4">
@@ -1264,43 +873,67 @@ export function Transactions({
                                   {cart.cartNumber}
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                  {formatDate(cart.savedDate)}{" "}
+                                  {formatDate(new Date(cart.savedDate))}{" "}
                                   at{" "}
-                                  {formatTime(cart.savedDate)}
+                                  {formatTime(new Date(cart.savedDate))}
                                 </p>
                               </div>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <img
-                                  src={cart.customer.avatar}
-                                  alt={cart.customer.name}
-                                  className="w-8 h-8 rounded-full object-cover"
-                                />
+                                {cart.customerAvatar ? (
+                                  <img
+                                    src={cart.customerAvatar}
+                                    alt={cart.customerName}
+                                    className="w-8 h-8 rounded-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                                    <User className="w-4 h-4 text-slate-400" />
+                                  </div>
+                                )}
                                 <span className="text-sm text-slate-900">
-                                  {cart.customer.name}
+                                  {cart.customerName || "No Customer"}
                                 </span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
                               <span className="text-sm text-slate-900">
-                                {formatDate(cart.savedDate)}
+                                {formatDate(new Date(cart.savedDate))}
                               </span>
                             </td>
                             <td className="px-6 py-4">
                               <span className="text-sm text-slate-900">
-                                M{cart.total.toFixed(2)}
+                                M{parseFloat(cart.total).toFixed(2)}
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              <button
-                                onClick={() =>
-                                  setSelectedCart(cart)
-                                }
-                                className="p-2 hover:bg-white/50 rounded-lg transition-colors"
-                              >
-                                <Eye className="w-4 h-4 text-slate-600" />
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setSelectedCart(cart)}
+                                  className="p-2 hover:bg-white/50 rounded-lg transition-colors"
+                                  title="View Details"
+                                >
+                                  <Eye className="w-4 h-4 text-slate-600" />
+                                </button>
+                                <button
+                                  onClick={() => onResumeCart(cart)}
+                                  className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Resume Checkout"
+                                >
+                                  <PlayCircle className="w-4 h-4 text-blue-600" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteCart(cart.id)}
+                                  className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete Cart"
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-600" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1341,18 +974,27 @@ export function Transactions({
                 Customer
               </p>
               <div className="flex items-center gap-3">
-                <img
-                  src={selectedTransaction.customer.avatar}
-                  alt={selectedTransaction.customer.name}
-                  className="w-12 h-12 rounded-full object-cover"
-                />
+                {selectedTransaction.customerAvatar ? (
+                  <img
+                    src={selectedTransaction.customerAvatar}
+                    alt={selectedTransaction.customerName}
+                    className="w-12 h-12 rounded-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop";
+                    }}
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                    <User className="w-6 h-6 text-slate-400" />
+                  </div>
+                )}
                 <div>
                   <p className="text-slate-900">
-                    {selectedTransaction.customer.name}
+                    {selectedTransaction.customerName || "Walk-in"}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {formatDate(selectedTransaction.date)} at{" "}
-                    {formatTime(selectedTransaction.date)}
+                    {formatDate(new Date(selectedTransaction.date))} at{" "}
+                    {formatTime(new Date(selectedTransaction.date))}
                   </p>
                 </div>
               </div>
@@ -1364,30 +1006,28 @@ export function Transactions({
                 Items Purchased
               </p>
               <div className="space-y-2">
-                {selectedTransaction.items.map(
-                  (item, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between bg-white/50 rounded-lg p-3 border border-white/50"
-                    >
-                      <div className="flex-1">
-                        <p className="text-sm text-slate-900">
-                          {item.name}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          M{item.price.toFixed(2)} ×{" "}
-                          {item.quantity}
-                        </p>
-                      </div>
-                      <span className="text-sm text-slate-900">
-                        M
-                        {(item.price * item.quantity).toFixed(
-                          2,
-                        )}
-                      </span>
+                {(selectedTransaction.items || []).map((item: any, index: number) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-white/50 rounded-lg p-3 border border-white/50"
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm text-slate-900">
+                        {item.itemName}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        M{parseFloat(item.price_at_sale).toFixed(2)} ×{" "}
+                        {item.quantity}
+                      </p>
                     </div>
-                  ),
-                )}
+                    <span className="text-sm text-slate-900">
+                      M
+                      {(parseFloat(item.price_at_sale) * item.quantity).toFixed(
+                        2,
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1419,7 +1059,7 @@ export function Transactions({
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Subtotal</span>
                 <span className="text-slate-900">
-                  M{selectedTransaction.subtotal.toFixed(2)}
+                  M{parseFloat(selectedTransaction.subtotal).toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -1427,23 +1067,23 @@ export function Transactions({
                   Tax (15%)
                 </span>
                 <span className="text-slate-900">
-                  M{selectedTransaction.tax.toFixed(2)}
+                  M{parseFloat(selectedTransaction.tax).toFixed(2)}
                 </span>
               </div>
-              {selectedTransaction.discount > 0 && (
+              {parseFloat(selectedTransaction.discount) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-green-600">
                     Discount
                   </span>
                   <span className="text-green-600">
-                    -M{selectedTransaction.discount.toFixed(2)}
+                    -M{parseFloat(selectedTransaction.discount).toFixed(2)}
                   </span>
                 </div>
               )}
               <div className="border-t border-slate-200 pt-3 flex justify-between">
                 <span className="text-slate-900">Total</span>
                 <span className="text-[#D78B30] text-xl">
-                  M{selectedTransaction.total.toFixed(2)}
+                  M{parseFloat(selectedTransaction.total).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -1498,18 +1138,27 @@ export function Transactions({
                 Customer
               </p>
               <div className="flex items-center gap-3">
-                <img
-                  src={selectedCart.customer.avatar}
-                  alt={selectedCart.customer.name}
-                  className="w-12 h-12 rounded-full object-cover"
-                />
+                {selectedCart.customerAvatar ? (
+                  <img
+                    src={selectedCart.customerAvatar}
+                    alt={selectedCart.customerName}
+                    className="w-12 h-12 rounded-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop";
+                    }}
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                    <User className="w-6 h-6 text-slate-400" />
+                  </div>
+                )}
                 <div>
                   <p className="text-slate-900">
-                    {selectedCart.customer.name}
+                    {selectedCart.customerName || "No Customer"}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {formatDate(selectedCart.savedDate)} at{" "}
-                    {formatTime(selectedCart.savedDate)}
+                    {formatDate(new Date(selectedCart.savedDate))} at{" "}
+                    {formatTime(new Date(selectedCart.savedDate))}
                   </p>
                 </div>
               </div>
@@ -1528,16 +1177,12 @@ export function Transactions({
                   >
                     <div className="flex-1">
                       <p className="text-sm text-slate-900">
-                        {item.name}
+                        {item.itemName}
                       </p>
                       <p className="text-xs text-slate-500">
-                        M{item.price.toFixed(2)} ×{" "}
-                        {item.quantity}
+                        {item.quantity} units
                       </p>
                     </div>
-                    <span className="text-sm text-slate-900">
-                      M{(item.price * item.quantity).toFixed(2)}
-                    </span>
                   </div>
                 ))}
               </div>
@@ -1548,7 +1193,7 @@ export function Transactions({
               <div className="flex justify-between text-sm">
                 <span className="text-slate-600">Subtotal</span>
                 <span className="text-slate-900">
-                  M{selectedCart.subtotal.toFixed(2)}
+                  M{parseFloat(selectedCart.subtotal).toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -1556,23 +1201,23 @@ export function Transactions({
                   Tax (15%)
                 </span>
                 <span className="text-slate-900">
-                  M{selectedCart.tax.toFixed(2)}
+                  M{parseFloat(selectedCart.tax).toFixed(2)}
                 </span>
               </div>
-              {selectedCart.discount > 0 && (
+              {parseFloat(selectedCart.discount) > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-green-600">
                     Discount
                   </span>
                   <span className="text-green-600">
-                    -M{selectedCart.discount.toFixed(2)}
+                    -M{parseFloat(selectedCart.discount).toFixed(2)}
                   </span>
                 </div>
               )}
               <div className="border-t border-slate-200 pt-3 flex justify-between">
                 <span className="text-slate-900">Total</span>
                 <span className="text-[#D78B30] text-xl">
-                  M{selectedCart.total.toFixed(2)}
+                  M{parseFloat(selectedCart.total).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -1593,8 +1238,7 @@ export function Transactions({
             <div className="mt-6 flex gap-3">
               <button
                 onClick={() => {
-                  console.log("Resume cart:", selectedCart.id);
-                  alert("Resuming cart in checkout...");
+                  onResumeCart(selectedCart);
                   setSelectedCart(null);
                 }}
                 className="flex-1 flex items-center justify-center gap-2 bg-[#D78B30] hover:bg-[#C4661F] text-white px-4 py-3 rounded-xl transition-colors"
@@ -1604,16 +1248,8 @@ export function Transactions({
               </button>
               <button
                 onClick={() => {
-                  if (
-                    confirm(
-                      "Are you sure you want to delete this saved cart?",
-                    )
-                  ) {
-                    console.log(
-                      "Delete cart:",
-                      selectedCart.id,
-                    );
-                    alert("Cart deleted successfully!");
+                  if (confirm("Are you sure you want to delete this saved cart?")) {
+                    handleDeleteCart(selectedCart.id);
                     setSelectedCart(null);
                   }
                 }}
@@ -1673,95 +1309,63 @@ export function Transactions({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {allTransactions
-                      .filter(
-                        (t) =>
-                          t.date.getFullYear() ===
-                          selectedCalendarDay.getFullYear() &&
-                          t.date.getMonth() ===
-                          selectedCalendarDay.getMonth() &&
-                          t.date.getDate() ===
-                          selectedCalendarDay.getDate(),
-                      )
-                      .map((transaction) => {
-                        const paymentStyle =
-                          getPaymentMethodStyle(
-                            transaction.paymentMethod,
-                          );
-                        const PaymentIcon = paymentStyle.icon;
-
+                    {transactions
+                      .filter((t: any) => {
+                        const d = new Date(t.date);
+                        return d.getFullYear() === selectedCalendarDay.getFullYear() &&
+                          d.getMonth() === selectedCalendarDay.getMonth() &&
+                          d.getDate() === selectedCalendarDay.getDate();
+                      })
+                      .map((t: any) => {
+                        const style = getPaymentMethodStyle(t.paymentMethod);
+                        const Icon = style.icon;
                         return (
-                          <tr
-                            key={transaction.id}
-                            className="hover:bg-white/30 transition-colors"
-                          >
+                          <tr key={t.id} className="hover:bg-white/30 transition-colors">
                             <td className="px-6 py-4">
                               <div>
-                                <p className="text-sm text-slate-900">
-                                  {
-                                    transaction.transactionNumber
-                                  }
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  {formatDate(transaction.date)}{" "}
-                                  at{" "}
-                                  {formatTime(transaction.date)}
-                                </p>
+                                <p className="text-sm text-slate-900 font-medium">{t.transactionNumber}</p>
+                                <p className="text-xs text-slate-500">{formatTime(new Date(t.date))}</p>
                               </div>
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <img
-                                  src={
-                                    transaction.customer.avatar
-                                  }
-                                  alt={
-                                    transaction.customer.name
-                                  }
-                                  className="w-8 h-8 rounded-full object-cover"
-                                />
-                                <span className="text-sm text-slate-900">
-                                  {transaction.customer.name}
-                                </span>
+                                {t.customerAvatar ? (
+                                  <img
+                                    src={t.customerAvatar}
+                                    alt={t.customerName}
+                                    className="w-8 h-8 rounded-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                                    <User className="w-4 h-4 text-slate-400" />
+                                  </div>
+                                )}
+                                <span className="text-sm text-slate-900">{t.customerName || "Walk-in"}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div
-                                className={`flex items-center gap-2 ${paymentStyle.bg} ${paymentStyle.color} px-3 py-1.5 rounded-lg w-fit`}
-                              >
-                                <PaymentIcon className="w-3 h-3" />
-                                <span className="text-xs">
-                                  {transaction.paymentMethod}
-                                </span>
+                              <div className={`flex items-center gap-2 ${style.bg} ${style.color} px-2 py-1 rounded-lg w-fit`}>
+                                <Icon className="w-3 h-3" />
+                                <span className="text-xs">{t.paymentMethod}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-4">
-                              <span className="text-sm text-slate-900">
-                                M{transaction.total.toFixed(2)}
-                              </span>
+                            <td className="px-6 py-4 text-sm text-slate-900">
+                              M{parseFloat(t.total).toFixed(2)}
                             </td>
                             <td className="px-6 py-4">
-                              <span
-                                className={`text-xs px-3 py-1 rounded-full ${transaction.status ===
-                                  "Completed"
-                                  ? "bg-green-100 text-green-700"
-                                  : transaction.status ===
-                                    "Refunded"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                                  }`}
-                              >
-                                {transaction.status}
+                              <span className={`text-xs px-2 py-1 rounded-full ${t.status === "Completed" ? "bg-green-100 text-green-700" :
+                                t.status === "Refunded" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
+                                }`}>
+                                {t.status}
                               </span>
                             </td>
                             <td className="px-6 py-4">
                               <button
-                                onClick={() =>
-                                  setSelectedTransaction(
-                                    transaction,
-                                  )
-                                }
-                                className="p-2 hover:bg-white/50 rounded-lg transition-colors"
+                                onClick={() => setSelectedTransaction(t)}
+                                className="p-1 hover:bg-white/50 rounded-lg transition-colors"
                               >
                                 <Eye className="w-4 h-4 text-slate-600" />
                               </button>
