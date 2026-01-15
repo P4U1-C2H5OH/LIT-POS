@@ -41,7 +41,6 @@ class InventoryItemSerializer(serializers.ModelSerializer):
     taxRate = serializers.ReadOnlyField(source='tax.rate')
     price = serializers.DecimalField(source='selling_price', max_digits=10, decimal_places=2)
     stock = serializers.IntegerField(source='quantity')
-    image = serializers.URLField(source='image_url')
 
     class Meta:
         model = InventoryItem
@@ -124,7 +123,8 @@ class SavedCartSerializer(serializers.ModelSerializer):
 
 class StockAdjustmentSerializer(serializers.ModelSerializer):
     itemName = serializers.ReadOnlyField(source='item.name')
-    adjustedByName = serializers.ReadOnlyField(source='adjusted_by.name')
+    itemSku = serializers.ReadOnlyField(source='item.sku')
+    adjustedBy = serializers.ReadOnlyField(source='adjusted_by.name')
     adjustedDate = serializers.DateTimeField(source='adjusted_date', read_only=True)
     previousQuantity = serializers.IntegerField(source='previous_quantity', read_only=True)
     newQuantity = serializers.IntegerField(source='new_quantity', read_only=True)
@@ -132,9 +132,12 @@ class StockAdjustmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockAdjustment
         fields = [
-            'id', 'item', 'itemName', 'type', 'quantity', 'previousQuantity', 
-            'newQuantity', 'reason', 'adjusted_by', 'adjustedByName', 'adjustedDate'
+            'id', 'item', 'itemName', 'itemSku', 'type', 'quantity', 'previousQuantity', 
+            'newQuantity', 'reason', 'notes', 'adjusted_by', 'adjustedBy', 'adjustedDate'
         ]
+        extra_kwargs = {
+            'adjusted_by': {'read_only': True}
+        }
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):

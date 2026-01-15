@@ -7,6 +7,7 @@ import { Checkout } from "./components/Checkout";
 import { Transactions } from "./components/Transactions";
 import { Inventory } from "./components/Inventory";
 import { Sidebar } from "./components/Sidebar";
+import { Analytics } from "./components/Analytics";
 import { Trash2 } from "lucide-react";
 import logo from "figma:asset/9a588303adbb1fdb50d30917cd5d81adce6d930a.png";
 import { api, Account, SavedCart } from "./api";
@@ -100,7 +101,7 @@ export default function App() {
   if (isAuthenticated && currentUser) {
     // Basic protection against unauthorized view access
     // If a Cashier tries to access Dashboard/Inventory/etc, reroute them or show nothing
-    const authorizedPages = ['Checkout', 'Transactions', 'Edit Profile', 'Edit Payment Details', 'Settings', 'Sign out'];
+    const authorizedPages = ['Checkout', 'Transactions', 'Inventory', 'Edit Profile', 'Edit Payment Details', 'Settings', 'Sign out'];
     // For Admin/Manager, all pages are allowed.
     // We only restrict if role is CASHIER and page is NOT in authorized list.
     if (currentUser.role === 'CASHIER' && !authorizedPages.includes(currentPage)) {
@@ -131,6 +132,12 @@ export default function App() {
             userProfilePicture={currentUser.profilePicture}
           />
         )}
+        {effectivePage === "Analytics" && (
+          <Analytics
+            userName={currentUser.name}
+            userProfilePicture={currentUser.profilePicture}
+          />
+        )}
         {effectivePage === "Checkout" && (
           <Checkout
             userName={currentUser.name}
@@ -153,6 +160,7 @@ export default function App() {
           <Inventory
             userName={currentUser.name}
             userProfilePicture={currentUser.profilePicture}
+            userRole={currentUser.role}
           />
         )}
       </div>

@@ -192,6 +192,10 @@ class ApiService {
             headers['Authorization'] = `Bearer ${this.token}`;
         }
 
+        if (options.body instanceof FormData) {
+            delete (headers as any)['Content-Type'];
+        }
+
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             ...options,
             headers,
@@ -219,6 +223,10 @@ class ApiService {
             } catch (parseError) {
                 throw new Error(`API Error (${response.status}): ${errorText || response.statusText}`);
             }
+        }
+
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return null;
         }
 
         return response.json();
@@ -299,13 +307,20 @@ class ApiService {
     async createInventoryItem(data: any): Promise<Item> {
         return this.request('/inventory/', {
             method: 'POST',
-            body: JSON.stringify(data),
+            body: data instanceof FormData ? data : JSON.stringify(data),
         });
     }
 
     async adjustStock(data: any): Promise<StockAdjustment> {
         return this.request('/stock-adjustments/', {
             method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async updateInventoryItem(id: string | number, data: any): Promise<Item> {
+        return this.request(`/inventory/${id}/`, {
+            method: 'PATCH',
             body: JSON.stringify(data),
         });
     }
@@ -316,7 +331,7 @@ export interface StockAdjustment {
     itemId: string | number;
     itemName: string;
     itemSku: string;
-    type: "Addition" | "Removal" | "Damage" | "Transfer" | "Return" | "Disposal";
+    type: "ADDITION" | "REMOVAL" | "DAMAGE" | "TRANSFER" | "RETURN" | "DISPOSAL";
     quantity: number;
     previousQuantity: number;
     newQuantity: number;

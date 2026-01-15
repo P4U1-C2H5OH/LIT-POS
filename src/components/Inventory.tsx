@@ -38,6 +38,7 @@ import { useEffect } from "react";
 interface InventoryProps {
   userName: string;
   userProfilePicture: string;
+  userRole: string;
 }
 
 // interfaces removed, using api.ts
@@ -46,7 +47,7 @@ type ViewMode = "Items" | "Adjustments" | "Reports";
 type ItemFilter = "All" | "In Stock" | "Low Stock" | "Out of Stock";
 type ReportView = "Overview" | "COGS" | "Projected" | "Category";
 
-export function Inventory({ userName, userProfilePicture }: InventoryProps) {
+export function Inventory({ userName, userProfilePicture, userRole }: InventoryProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("Items");
   const [searchQuery, setSearchQuery] = useState("");
   const [itemFilter, setItemFilter] = useState<ItemFilter>("All");
@@ -65,10 +66,11 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
     supplier: '',
     location: '',
     barcode: '',
-    tax: ''
+    tax: '',
+    image: null as File | null
   });
   const [adjustment, setAdjustment] = useState({
-    type: 'Addition',
+    type: 'ADDITION',
     quantity: 0,
     reason: '',
     notes: ''
@@ -95,21 +97,36 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
 
   useEffect(() => {
     const fetchData = async () => {
+      // 1. Fetch Items, Categories, Taxes (Should be accessible to all authorized users)
       try {
-        const [items, stats, adjustments, cats, txs] = await Promise.all([
+        const [items, cats, txs] = await Promise.all([
           api.getInventory(),
-          api.getDashboardMetrics(),
-          api.getStockAdjustments(),
           api.getCategories(),
           api.getTaxes()
         ]);
         setInventoryItems(items);
-        setGlobalStats(stats);
-        setAllStockAdjustments(adjustments);
         setBackendCategories(cats);
         setBackendTaxes(txs);
       } catch (error) {
-        console.error("Failed to fetch inventory data:", error);
+        console.error("Failed to fetch basic inventory data:", error);
+      }
+
+      // 2. Fetch Dashboard Metrics (Restricted to Admin/Manager)
+      try {
+        const stats = await api.getDashboardMetrics();
+        setGlobalStats(stats);
+      } catch (error) {
+        // Silently fail for non-admin users
+        console.log("Could not fetch dashboard metrics (likely restricted)");
+      }
+
+      // 3. Fetch Stock Adjustments (Restricted to Admin/Manager)
+      try {
+        const adjustments = await api.getStockAdjustments();
+        setAllStockAdjustments(adjustments);
+      } catch (error) {
+        // Silently fail for non-admin users
+        console.log("Could not fetch stock adjustments (likely restricted)");
       }
     };
     fetchData();
@@ -215,14 +232,26 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
 
   const handleAddItem = async () => {
     try {
-      const payload = {
-        ...newItem,
-        category: parseInt(newItem.category) || (backendCategories.length > 0 ? backendCategories[0].id : 1),
-        tax: parseInt(newItem.tax) || (backendTaxes.length > 0 ? backendTaxes[0].id : 1),
-        unit_cost: newItem.unit_cost.toString()
-      };
+      const formData = new FormData();
+      formData.append('name', newItem.name);
+      formData.append('sku', newItem.sku);
+      formData.append('category', newItem.category || (backendCategories.length > 0 ? backendCategories[0].id.toString() : '1'));
+      formData.append('tax', newItem.tax || (backendTaxes.length > 0 ? backendTaxes[0].id.toString() : '1'));
+      formData.append('unit', newItem.unit);
+      formData.append('stock', newItem.stock.toString());
+      formData.append('min_stock', newItem.min_stock.toString());
+      formData.append('max_stock', newItem.max_stock.toString());
+      formData.append('unit_cost', newItem.unit_cost);
+      formData.append('price', newItem.price.toString());
+      formData.append('supplier', newItem.supplier);
+      formData.append('location', newItem.location);
+      formData.append('barcode', newItem.barcode);
 
-      await api.createInventoryItem(payload);
+      if (newItem.image) {
+        formData.append('image', newItem.image);
+      }
+
+      await api.createInventoryItem(formData);
       alert("Item added successfully!");
       setShowAddItemModal(false);
       setNewItem({
@@ -237,7 +266,9 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
         price: 0,
         supplier: '',
         location: '',
-        barcode: ''
+        barcode: '',
+        tax: '',
+        image: null
       });
       // Refresh inventory
       const [items, stats] = await Promise.all([
@@ -252,11 +283,44 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
     }
   };
 
+  const handleUpdatePrice = async () => {
+    if (!selectedItem) return;
+    try {
+      const newPrice = parseFloat(newSellingPrice);
+      if (isNaN(newPrice) || newPrice <= 0) {
+        alert("Please enter a valid price");
+        return;
+      }
+
+      await api.updateInventoryItem(selectedItem.id, {
+        price: newPrice,
+        reason: priceChangeReason
+      });
+
+      alert(`Price updated successfully to M${newPrice.toFixed(2)}`);
+
+      setSelectedItem({ ...selectedItem, price: newPrice });
+      setEditingPrice(false);
+      setNewSellingPrice("");
+      setPriceChangeReason("");
+
+      const [items, stats] = await Promise.all([
+        api.getInventory(),
+        api.getDashboardMetrics()
+      ]);
+      setInventoryItems(items);
+      setGlobalStats(stats);
+    } catch (error) {
+      console.error("Error updating price:", error);
+      alert("Failed to update price.");
+    }
+  };
+
   const handleAdjustStock = async () => {
     if (!selectedItem) return;
     try {
       const payload = {
-        itemId: selectedItem.id,
+        item: selectedItem.id,
         ...adjustment
       };
 
@@ -377,12 +441,18 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
     return breakdown.sort((a, b) => b.profit - a.profit);
   };
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+  const formatDate = (date: Date | string) => {
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return 'N/A';
+      return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch (e) {
+      return 'N/A';
+    }
   };
 
   const formatTime = (date: Date) => {
@@ -549,30 +619,34 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
               <span>Items</span>
             </div>
           </button>
-          <button
-            onClick={() => setViewMode("Adjustments")}
-            className={`px-6 py-2.5 rounded-xl text-sm transition-all ${viewMode === "Adjustments"
-              ? "bg-[#D78B30] text-white shadow-sm"
-              : "text-slate-600 hover:bg-white/50"
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4" />
-              <span>Adjustments</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setViewMode("Reports")}
-            className={`px-6 py-2.5 rounded-xl text-sm transition-all ${viewMode === "Reports"
-              ? "bg-[#D78B30] text-white shadow-sm"
-              : "text-slate-600 hover:bg-white/50"
-              }`}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              <span>Reports</span>
-            </div>
-          </button>
+          {userRole !== 'CASHIER' && (
+            <>
+              <button
+                onClick={() => setViewMode("Adjustments")}
+                className={`px-6 py-2.5 rounded-xl text-sm transition-all ${viewMode === "Adjustments"
+                  ? "bg-[#D78B30] text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white/50"
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4" />
+                  <span>Adjustments</span>
+                </div>
+              </button>
+              <button
+                onClick={() => setViewMode("Reports")}
+                className={`px-6 py-2.5 rounded-xl text-sm transition-all ${viewMode === "Reports"
+                  ? "bg-[#D78B30] text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white/50"
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  <span>Reports</span>
+                </div>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Conditionally render based on view mode */}
@@ -710,14 +784,14 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                             </td>
                             <td className="px-6 py-4">
                               <span
-                                className={`text-xs px-3 py-1 rounded-full ${item.status === "In Stock"
+                                className={`text-xs px-3 py-1 rounded-full ${status === "In Stock"
                                   ? "bg-green-100 text-green-700"
-                                  : item.status === "Low Stock"
+                                  : status === "Low Stock"
                                     ? "bg-orange-100 text-orange-700"
                                     : "bg-red-100 text-red-700"
                                   }`}
                               >
-                                {item.status}
+                                {status}
                               </span>
                             </td>
                             <td className="px-6 py-4">
@@ -797,12 +871,12 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     className="bg-white/50 border-2 border-white/50 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                   >
                     <option value="All">All Types</option>
-                    <option value="Addition">Addition</option>
-                    <option value="Removal">Removal</option>
-                    <option value="Damage">Damage</option>
-                    <option value="Transfer">Transfer</option>
-                    <option value="Return">Return</option>
-                    <option value="Disposal">Disposal</option>
+                    <option value="ADDITION">Addition</option>
+                    <option value="REMOVAL">Removal</option>
+                    <option value="DAMAGE">Damage</option>
+                    <option value="TRANSFER">Transfer</option>
+                    <option value="RETURN">Return</option>
+                    <option value="DISPOSAL">Disposal</option>
                   </select>
                 </div>
 
@@ -949,10 +1023,10 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                             <td className="px-6 py-4">
                               <div>
                                 <p className="text-sm text-slate-900">
-                                  {formatDate(adjustment.adjustedDate)}
+                                  {formatDate(new Date(adjustment.adjustedDate))}
                                 </p>
                                 <p className="text-xs text-slate-500">
-                                  {formatTime(adjustment.adjustedDate)}
+                                  {formatTime(new Date(adjustment.adjustedDate))}
                                 </p>
                               </div>
                             </td>
@@ -979,12 +1053,12 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                             <td className="px-6 py-4">
                               <div>
                                 <p
-                                  className={`text-sm ${adjustment.type === "Addition"
+                                  className={`text-sm ${adjustment.type === "ADDITION"
                                     ? "text-green-600"
                                     : "text-red-600"
                                     }`}
                                 >
-                                  {adjustment.type === "Addition" ? "+" : "-"}
+                                  {adjustment.type === "ADDITION" ? "+" : "-"}
                                   {adjustment.quantity}
                                 </p>
                                 <p className="text-xs text-slate-500">
@@ -1700,6 +1774,32 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                 />
               </div>
 
+              {/* Image Upload */}
+              <div className="bg-white/50 rounded-xl p-4 border border-white/50">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm text-slate-700">
+                    Item Image
+                  </label>
+                  <Upload className="w-5 h-5 text-[#D78B30]" />
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setNewItem({ ...newItem, image: e.target.files[0] });
+                    }
+                  }}
+                  className="w-full text-sm text-slate-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-[#D78B30]/10 file:text-[#D78B30]
+                    hover:file:bg-[#D78B30]/20
+                  "
+                />
+              </div>
+
               {/* Two Column Layout */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Item Name */}
@@ -1970,15 +2070,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                       className="w-full bg-white/50 border-2 border-white/50 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                     />
                     <button
-                      onClick={() => {
-                        const newPrice = parseFloat(newSellingPrice);
-                        if (newPrice > 0) {
-                          alert(`Price updated from M${selectedItem.price.toFixed(2)} to M${newPrice.toFixed(2)}`);
-                          setEditingPrice(false);
-                        } else {
-                          alert("Please enter a valid price");
-                        }
-                      }}
+                      onClick={handleUpdatePrice}
                       className="w-full bg-[#D78B30] hover:bg-[#C4661F] text-white px-4 py-2 rounded-lg transition-colors text-sm"
                     >
                       Confirm Price Change
@@ -1986,7 +2078,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                   </div>
                 ) : (
                   <p className="text-2xl text-slate-900">
-                    M{selectedItem.price.toFixed(2)}
+                    M{Number(selectedItem.price).toFixed(2)}
                   </p>
                 )}
               </div>
@@ -2001,12 +2093,12 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                   onChange={(e) => setAdjustment({ ...adjustment, type: e.target.value as any })}
                   className="w-full bg-white/50 border-2 border-white/50 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
                 >
-                  <option value="Addition">Addition (Receive Stock)</option>
-                  <option value="Removal">Removal (Sales/Usage)</option>
-                  <option value="Damage">Damage/Spoilage</option>
-                  <option value="Transfer">Transfer</option>
-                  <option value="Return">Return to Supplier</option>
-                  <option value="Disposal">Disposal</option>
+                  <option value="ADDITION">Addition (Receive Stock)</option>
+                  <option value="REMOVAL">Removal (Sales/Usage)</option>
+                  <option value="DAMAGE">Damage/Spoilage</option>
+                  <option value="TRANSFER">Transfer</option>
+                  <option value="RETURN">Return to Supplier</option>
+                  <option value="DISPOSAL">Disposal</option>
                 </select>
               </div>
 
@@ -2287,7 +2379,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     </button>
                   </div>
                   <p className="text-sm text-slate-900">
-                    M{selectedItem.price.toFixed(2)}
+                    M{Number(selectedItem.price).toFixed(2)}
                   </p>
                 </div>
 
@@ -2319,7 +2411,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     Last Restocked
                   </p>
                   <p className="text-sm text-slate-900">
-                    {formatDate(selectedItem.lastRestocked)}
+                    {selectedItem.last_restocked ? formatDate(new Date(selectedItem.last_restocked)) : 'N/A'}
                   </p>
                 </div>
               </div>
@@ -2334,7 +2426,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     <p className="text-xs text-green-700 mb-1">Total Value</p>
                     <p className="text-lg text-green-900">
                       M
-                      {(selectedItem.quantity * selectedItem.unitCost).toFixed(
+                      {(selectedItem.stock * (Number(selectedItem.unit_cost) || 0)).toFixed(
                         2
                       )}
                     </p>
@@ -2346,7 +2438,7 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     <p className="text-lg text-green-900">
                       M
                       {(
-                        selectedItem.quantity * selectedItem.sellingPrice
+                        selectedItem.stock * selectedItem.price
                       ).toFixed(2)}
                     </p>
                   </div>
@@ -2356,8 +2448,8 @@ export function Inventory({ userName, userProfilePicture }: InventoryProps) {
                     </p>
                     <p className="text-lg text-green-900">
                       {(
-                        ((selectedItem.sellingPrice - selectedItem.unitCost) /
-                          selectedItem.sellingPrice) *
+                        ((selectedItem.price - (Number(selectedItem.unit_cost) || 0)) /
+                          selectedItem.price) *
                         100
                       ).toFixed(1)}
                       %

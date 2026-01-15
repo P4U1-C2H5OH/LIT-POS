@@ -46,7 +46,7 @@ export function Sidebar({
       badge: null,
       roles: ["ADMIN", "MANAGER", "CASHIER"],
     },
-    { icon: Package, label: "Inventory", badge: null, roles: ["ADMIN", "MANAGER"] },
+    { icon: Package, label: "Inventory", badge: null, roles: ["ADMIN", "MANAGER", "CASHIER"] },
     { icon: BarChart3, label: "Analytics", badge: 2, roles: ["ADMIN", "MANAGER"] },
     { icon: Users, label: "Employee", badge: null, roles: ["ADMIN", "MANAGER"] },
     { icon: ShoppingBag, label: "Orders", badge: null, roles: ["ADMIN", "MANAGER"] },

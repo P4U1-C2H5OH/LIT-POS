@@ -28,10 +28,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     permission_classes = [IsAdminOrManagerOrReadOnly]
 
+from rest_framework.permissions import AllowAny
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
 class InventoryItemViewSet(viewsets.ModelViewSet):
     queryset = InventoryItem.objects.all()
     serializer_class = InventoryItemSerializer
     permission_classes = [IsAdminOrManagerOrReadOnly]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @action(detail=False, methods=['get'])
     def low_stock(self, request):
@@ -144,6 +148,14 @@ class SavedCartViewSet(viewsets.ModelViewSet):
         
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+    def destroy(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+            self.perform_destroy(instance)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 class StockAdjustmentViewSet(viewsets.ModelViewSet):
     queryset = StockAdjustment.objects.all().order_by('-adjusted_date')
     serializer_class = StockAdjustmentSerializer
@@ -218,9 +230,9 @@ class DashboardMetricsView(viewsets.ViewSet):
         top_items_data = TransactionItem.objects.filter(transaction__status='COMPLETED').values(
             'item__name', 'item__sku', 'item__unit'
         ).annotate(
-            quantity=Sum('quantity'),
-            revenue=Sum(F('price_at_sale') * F('quantity'))
-        ).order_by('-quantity')[:5]
+            total_quantity=Sum('quantity'),
+            revenue=Sum(F('price_at_sale') * F('quantity'), output_field=models.DecimalField())
+        ).order_by('-total_quantity')[:5]
 
         top_items = []
         for item in top_items_data:
@@ -228,7 +240,7 @@ class DashboardMetricsView(viewsets.ViewSet):
                 "name": item['item__name'],
                 "sku": item['item__sku'],
                 "unit": item['item__unit'],
-                "quantity": item['quantity'],
+                "quantity": item['total_quantity'],
                 "revenue": float(item['revenue'])
             })
 
