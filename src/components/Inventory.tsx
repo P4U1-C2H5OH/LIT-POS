@@ -84,6 +84,14 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
   const [adjustmentStaffFilter, setAdjustmentStaffFilter] = useState("All");
   const [reportView, setReportView] = useState<ReportView>("Overview");
 
+  // What-if analysis states
+  const [priceAdjustment, setPriceAdjustment] = useState(0);
+  const [stockAdjustment, setStockAdjustment] = useState(0);
+
+  // COGS report states
+  const [cogsSortBy, setCogsSortBy] = useState<'revenue' | 'volume' | 'margin' | 'cogs'>('revenue');
+  const [showAllCOGS, setShowAllCOGS] = useState(false);
+
   // Price adjustment states
   const [editingPrice, setEditingPrice] = useState(false);
   const [newSellingPrice, setNewSellingPrice] = useState("");
@@ -385,8 +393,8 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
 
     // Derive simulated sold items from inventory items if needed, 
     // or keep a subset for UI demonstration until a full sales API is ready.
-    const soldItems = inventoryItems.slice(0, 4).map(item => ({
-      itemId: String(item.id),
+    const soldItems = inventoryItems.map(item => ({
+      itemId: item.id,
       name: item.name,
       quantity: Math.floor(Math.random() * 20) + 1,
       costAtPurchase: Number(item.unit_cost) || 0,
@@ -403,17 +411,37 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
   };
 
   // Calculate projected profit
-  const calculateProjectedProfit = () => {
+  const calculateProjectedProfit = (priceAdj = 0, stockAdj = 0) => {
+    // Base calculations from globalStats
     const currentInventoryValue = globalStats?.inventory?.current_value_at_cost || 0;
     const projectedRevenue = globalStats?.inventory?.potential_revenue || 0;
     const projectedProfit = projectedRevenue - currentInventoryValue;
     const projectedMargin = projectedRevenue > 0 ? ((projectedProfit / projectedRevenue) * 100) : 0;
+
+    // Calculate adjusted values based on inventory items
+    let adjustedRevenue = 0;
+    let adjustedCost = 0;
+
+    inventoryItems.forEach((item) => {
+      const adjustedStock = item.stock * (1 + stockAdj / 100);
+      const adjustedPrice = item.price * (1 + priceAdj / 100);
+      const itemCost = (Number(item.unit_cost) || 0) * (1 + stockAdj / 100);
+
+      adjustedRevenue += adjustedStock * adjustedPrice;
+      adjustedCost += item.stock * itemCost;
+    });
+
+    const adjustedProfit = adjustedRevenue - adjustedCost;
+    const adjustedMargin = adjustedRevenue > 0 ? ((adjustedProfit / adjustedRevenue) * 100) : 0;
 
     return {
       currentInventoryValue,
       projectedRevenue,
       projectedProfit,
       projectedMargin,
+      adjustedRevenue,
+      adjustedProfit,
+      adjustedMargin,
     };
   };
 
@@ -505,7 +533,7 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
   };
 
   const cogsData = calculateFIFOCOGS();
-  const projectedData = calculateProjectedProfit();
+  const projectedData = calculateProjectedProfit(priceAdjustment, stockAdjustment);
   const categoryData = calculateCategoryBreakdown();
 
   return (
@@ -1303,10 +1331,28 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
                 {/* Sold Items Breakdown */}
                 <div className="bg-white/70 backdrop-blur-md rounded-2xl shadow-sm border-2 border-white/50 overflow-hidden">
                   <div className="p-6 border-b border-slate-200">
-                    <h3 className="text-slate-900">Sold Items Breakdown (FIFO)</h3>
-                    <p className="text-sm text-slate-500 mt-1">
-                      Items sold with their purchase cost and revenue
-                    </p>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-slate-900">Sold Items Breakdown (FIFO)</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Items sold with their purchase cost and revenue
+                        </p>
+                      </div>
+                      {/* Sort Filter */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-600">Sort by:</span>
+                        <select
+                          value={cogsSortBy}
+                          onChange={(e) => setCogsSortBy(e.target.value as any)}
+                          className="bg-white/50 border-2 border-white/50 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#D78B30] transition-colors"
+                        >
+                          <option value="revenue">Revenue (Highest)</option>
+                          <option value="volume">Volume (Most Sold)</option>
+                          <option value="margin">Profit Margin (%)</option>
+                          <option value="cogs">Total COGS</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1336,64 +1382,110 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {cogsData.soldItems.map((soldItem, index) => {
-                          const item = inventoryItems.find(i => i.id === soldItem.itemId);
-                          const totalCost = soldItem.quantity * soldItem.costAtPurchase;
-                          const totalRevenue = soldItem.quantity * soldItem.soldPrice;
-                          const profit = totalRevenue - totalCost;
-                          const margin = ((profit / totalRevenue) * 100);
+                        {(() => {
+                          // Sort items based on selected criteria
+                          const sortedItems = [...cogsData.soldItems].sort((a, b) => {
+                            switch (cogsSortBy) {
+                              case 'revenue':
+                                return (b.quantity * b.soldPrice) - (a.quantity * a.soldPrice);
+                              case 'volume':
+                                return b.quantity - a.quantity;
+                              case 'margin': {
+                                const marginA = a.soldPrice > 0 ? ((a.soldPrice - a.costAtPurchase) / a.soldPrice) * 100 : 0;
+                                const marginB = b.soldPrice > 0 ? ((b.soldPrice - b.costAtPurchase) / b.soldPrice) * 100 : 0;
+                                return marginB - marginA;
+                              }
+                              case 'cogs':
+                                return (b.quantity * b.costAtPurchase) - (a.quantity * a.costAtPurchase);
+                              default:
+                                return 0;
+                            }
+                          });
 
-                          return (
-                            <tr key={index} className="hover:bg-white/30 transition-colors">
-                              <td className="px-6 py-4">
-                                <div>
-                                  <p className="text-sm text-slate-900">
-                                    {item?.name || "Unknown Item"}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {item?.sku}
-                                  </p>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-slate-900">
-                                  {soldItem.quantity}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-slate-900">
-                                  M{soldItem.costAtPurchase.toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-red-600">
-                                  M{totalCost.toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-green-600">
-                                  M{totalRevenue.toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-blue-600">
-                                  M{profit.toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className={`text-sm ${margin >= 50 ? "text-green-600" :
-                                  margin >= 30 ? "text-blue-600" :
-                                    "text-orange-600"
-                                  }`}>
-                                  {margin.toFixed(1)}%
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                          // Slice based on showAllCOGS state
+                          const displayedItems = showAllCOGS ? sortedItems : sortedItems.slice(0, 15);
+
+                          return displayedItems.map((soldItem, index) => {
+                            const item = inventoryItems.find(i => i.id === soldItem.itemId);
+                            const totalCost = soldItem.quantity * soldItem.costAtPurchase;
+                            const totalRevenue = soldItem.quantity * soldItem.soldPrice;
+                            const profit = totalRevenue - totalCost;
+                            const margin = ((profit / totalRevenue) * 100);
+
+                            return (
+                              <tr key={index} className="hover:bg-white/30 transition-colors">
+                                <td className="px-6 py-4">
+                                  <div>
+                                    <p className="text-sm text-slate-900">
+                                      {item?.name || "Unknown Item"}
+                                    </p>
+                                    <p className="text-xs text-slate-500">
+                                      {item?.sku}
+                                    </p>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-sm text-slate-900">
+                                    {soldItem.quantity}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-sm text-slate-900">
+                                    M{soldItem.costAtPurchase.toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-sm text-red-600">
+                                    M{totalCost.toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-sm text-green-600">
+                                    M{totalRevenue.toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className="text-sm text-blue-600">
+                                    M{profit.toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`text-sm ${margin >= 50 ? "text-green-600" :
+                                    margin >= 30 ? "text-blue-600" :
+                                      "text-orange-600"
+                                    }`}>
+                                    {margin.toFixed(1)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Show More Button */}
+                  {cogsData.soldItems.length > 15 && (
+                    <div className="p-4 border-t border-slate-200 flex justify-center">
+                      <button
+                        onClick={() => setShowAllCOGS(!showAllCOGS)}
+                        className="flex items-center gap-2 bg-white/70 hover:bg-white border-2 border-white/50 hover:border-[#D78B30] text-slate-700 px-6 py-2 rounded-xl transition-colors text-sm"
+                      >
+                        {showAllCOGS ? (
+                          <>
+                            <ChevronDown className="w-4 h-4 rotate-180" />
+                            <span>Show Less</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            <span>Show More ({cogsData.soldItems.length - 15} more items)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1442,13 +1534,14 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="text-sm text-slate-700 block mb-2">
-                        Average Price Increase (%)
+                        Average Price Increase: <span className="font-semibold text-[#D78B30]">{priceAdjustment > 0 ? '+' : ''}{priceAdjustment}%</span>
                       </label>
                       <input
                         type="range"
                         min="-20"
                         max="50"
-                        defaultValue="0"
+                        value={priceAdjustment}
+                        onChange={(e) => setPriceAdjustment(Number(e.target.value))}
                         className="w-full"
                       />
                       <div className="flex justify-between text-xs text-slate-500 mt-1">
@@ -1459,13 +1552,14 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
                     </div>
                     <div>
                       <label className="text-sm text-slate-700 block mb-2">
-                        Stock Level Adjustment (%)
+                        Stock Level Adjustment: <span className="font-semibold text-[#D78B30]">{stockAdjustment > 0 ? '+' : ''}{stockAdjustment}%</span>
                       </label>
                       <input
                         type="range"
                         min="-50"
                         max="100"
-                        defaultValue="0"
+                        value={stockAdjustment}
+                        onChange={(e) => setStockAdjustment(Number(e.target.value))}
                         className="w-full"
                       />
                       <div className="flex justify-between text-xs text-slate-500 mt-1">
@@ -1475,10 +1569,45 @@ export function Inventory({ userName, userProfilePicture, userRole }: InventoryP
                       </div>
                     </div>
                   </div>
-                  <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-xl">
-                    <p className="text-sm text-green-900">
-                      Projected Profit with adjustments: <span className="font-bold">M{projectedData.projectedProfit.toFixed(2)}</span>
-                    </p>
+                  <div className="mt-6 space-y-3">
+                    {/* Base Projection */}
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <p className="text-sm text-blue-900">
+                        Base Projected Profit: <span className="font-bold">M{projectedData.projectedProfit.toFixed(2)}</span>
+                      </p>
+                    </div>
+
+                    {/* Adjusted Projection */}
+                    {(priceAdjustment !== 0 || stockAdjustment !== 0) && (
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm text-green-900">
+                            Adjusted Projected Profit: <span className="font-bold">M{projectedData.adjustedProfit.toFixed(2)}</span>
+                          </p>
+                          <button
+                            onClick={() => {
+                              setPriceAdjustment(0);
+                              setStockAdjustment(0);
+                            }}
+                            className="text-xs text-green-700 hover:text-green-900 underline"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className={`font-semibold ${projectedData.adjustedProfit - projectedData.projectedProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            {projectedData.adjustedProfit - projectedData.projectedProfit >= 0 ? '+' : ''}
+                            M{(projectedData.adjustedProfit - projectedData.projectedProfit).toFixed(2)}
+                          </span>
+                          <span className="text-green-700">
+                            ({((projectedData.adjustedProfit - projectedData.projectedProfit) / projectedData.projectedProfit * 100).toFixed(1)}%)
+                          </span>
+                        </div>
+                        <div className="mt-2 text-xs text-green-700">
+                          Revenue: M{projectedData.adjustedRevenue.toFixed(2)} | Margin: {projectedData.adjustedMargin.toFixed(1)}%
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
